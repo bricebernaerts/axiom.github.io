@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Hex Grid Game</title>
+<style>
+  body { margin: 0; background: #fff; font-family: Arial, sans-serif; user-select: none; }
+  canvas { display: block; margin: 0 auto; background: #f9f9f9; }
+  #uiPanel {
+    width: 2500px;  /* Increased width */
+    margin: 10px auto;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #uiPanel h1 {
+      margin: 0;
+      font-weight: bold;
+      font-size: 48px;
+      color: orange;         /* added orange color */
+      text-decoration: underline;  /* added underline */
+  }
+  #uiPanel #roundLabel {
+    font-size: 24px; margin-top: 5px; font-weight: bold;
+  }
+  #infoDiv .closeBtn {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    cursor: pointer;
+    font-size: 18px;
+    font-weight: bold;
+    color: #666;
+    user-select: none;
+  }
+  
+#infoDiv {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 420px;
+    background-color: black;
+    border: 3px solid gold;
+    border-radius: 12px;
+    color: gold;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 14px;
+    z-index: 50;
+    user-select: none;
+    padding: 16px 20px;
+    display: none;
+
+    /* perfectly center the box by shifting up and left by half its size */
+    transform: translate(-50%, -50%);
+    
+    /* Remove any top/right overrides done in style attribute or JS */
+}
+
+#infoDiv h2 {
+    margin: 0 0 12px 0;
+    font-size: 20px;
+    font-weight: bold;
+    text-align: center;
+    color: gold;
+}
+
+.info-container {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.subcontainer {
+    background: linear-gradient(145deg, #331a00, #000000);
+    border: 2px solid gold;
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.subcontainer h3 {
+    margin: 0 0 8px 0;
+    font-size: 16px;
+    font-weight: bold;
+    color: gold;
+    border-bottom: 1px solid gold;
+    padding-bottom: 4px;
+}
+
+/* Terrain & Population grids: 1 row, 4 columns */
+.grid-1row4col {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    justify-items: center;
+}
+
+/* Population: 3 rows x 4 columns grid */
+.grid-3row4col {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(3, auto);
+    gap: 6px 12px;
+}
+
+/* Buildings grid: 3 rows x 3 columns */
+.grid-3row3col {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.building-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #1a1a00;
+    border: 1px solid #cc9900;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-weight: 600;
+    color: gold;
+    font-size: 13px;
+}
+
+.building-label {
+}
+
+.building-qty {
+    background-color: gold;
+    color: black;
+    border-radius: 50%;
+    min-width: 20px;
+    height: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+    line-height: 20px;
+}
+  
+#titleContainer {
+    background: #eee;  /* light grey fill */
+    padding: 8px 16px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    min-width: 200px;
+    text-align: center;
+    width: auto; /* auto width based on content */
+    display: block;
+}
+
+#roundContainer {
+    background: #eee;  /* light grey fill */
+    padding: 8px 16px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    min-width: 200px;
+    text-align: center;
+    width: auto; /* auto width based on content */
+    font-size: 24px;
+    font-weight: bold;
+    text-align: center;
+  }
+  
+#manaContainer {
+    width: 2500px;  /* Increased width */
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.manaBar {
+    width: 2500px;
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 10px;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 10px;
+    box-sizing: border-box;
+    background-color: black;
+    color: gold;
+    border: 3px solid gold;
+    border-radius: 12px;
+}
+
+.statItem {
+    min-width: 90px;
+    text-align: center;
+    border: 2px solid gold;
+    background-color: white;
+    border-radius: 8px;
+    padding: 8px 6px;
+    user-select: none;
+}
+
+
+.playerBlue {
+    background-color: #cce5ff;
+    color: #004085;
+    border: 2px solid #004085;
+    border-radius: 6px 6px 0 0;
+    margin-bottom: 4px;
+}
+
+.playerRed {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 2px solid #721c24;
+    border-radius: 0 0 6px 6px;
+    margin-top: 4px;
+}
+
+</style>
+</head>
+<body>
+
+<div id="uiPanel">
+    <div id="titleContainer">
+        <h1>Axiom</h1>
+    <div id="roundContainer" style="display: flex; align-items: center; justify-content: center; gap: 20px;">
+      <div id="roundLabel">Round 1</div>
+      <button id="regenMapBtn" style="
+          padding: 6px 12px;
+          font-size: 16px;
+          cursor: pointer;
+          border-radius: 6px;
+          border: none;
+          background-color: #ff6f00;
+          color: white;
+          font-weight: bold;
+          box-shadow: 0 0 10px #ff6f00;
+          transition: background-color 0.3s ease;
+      ">Regen Map</button>
+      <button id="menuBtn" style="
+          padding: 6px 12px;
+          font-size: 16px;
+          cursor: pointer;
+          border-radius: 6px;
+          border: none;
+          background-color: #007bff;
+          color: white;
+          font-weight: bold;
+          box-shadow: 0 0 10px #007bff;
+          margin-left: 10px;
+          transition: background-color 0.3s ease;
+      ">Menu</button>
+    </div>
+
+</div>
+
+<div id="manaContainer">
+    <div id="blueMana" class="manaBar playerBlue">
+      <div class="statItem">Population: <span id="bluePopulationValue">0</span></div>
+      <div class="statItem">Food: <span id="blueFoodValue">0</span></div>
+      <div class="statItem">Science: <span id="blueScienceValue">0</span></div>
+      <div class="statItem">Production: <span id="blueProductionValue">0</span></div>
+      <div class="statItem">Gold: <span id="blueGoldValue">0</span></div>
+      <div class="statItem">Culture: <span id="blueCultureValue">0</span></div>
+      <div class="statItem">Faith: <span id="blueFaithValue">0</span></div>
+      <div class="statItem">Power: <span id="bluePowerValue">0</span></div>
+      <div class="statItem">Absolutism: <span id="blueAbsolutismValue">0%</span></div>
+    </div>
+
+    <canvas id="gameCanvas" width="2500" height="2400"></canvas>
+
+    <div id="redMana" class="manaBar playerRed">
+      <div class="statItem">Population: <span id="redPopulationValue">0</span></div>
+      <div class="statItem">Food: <span id="redFoodValue">0</span></div>
+      <div class="statItem">Science: <span id="redScienceValue">0</span></div>
+      <div class="statItem">Production: <span id="redProductionValue">0</span></div>
+      <div class="statItem">Gold: <span id="redGoldValue">0</span></div>
+      <div class="statItem">Culture: <span id="redCultureValue">0</span></div>
+      <div class="statItem">Faith: <span id="redFaithValue">0</span></div>
+      <div class="statItem">Power: <span id="redPowerValue">0</span></div>
+      <div class="statItem">Absolutism: <span id="redAbsolutismValue">0%</span></div>
+    </div>
+</div>
+
+<div id="infoDiv" style="display:none;">
+  <div class="closeBtn" title="Close" style="cursor:pointer; position:absolute; top:6px; right:12px; font-size: 20px; color: gold;">×</div>
+
+  <h2 id="provinceTitle">Province Name</h2>
+
+  <div class="info-container">
+    <!-- Ring info containers -->
+    <div id="terrainContainer" class="subcontainer">
+      <h3>Terrain</h3>
+      <div id="terrainDetails"></div>
+      <div class="grid-1row4col" id="terrainStats"></div>
+      <div class="grid-1row4col" id="terrainResources" style="margin-top:10px;"></div>
+    </div>
+
+    <div id="populationContainer" class="subcontainer">
+      <h3>Population</h3>
+      <div class="grid-3row4col" id="populationStats"></div>
+    </div>
+
+    <div id="buildingsContainer" class="subcontainer">
+      <h3>Buildings</h3>
+      <div class="grid-3row3col" id="buildingsGrid"></div>
+    </div>
+
+    <!-- Token info containers (hidden by default, shown on token select) -->
+    <div id="tokenStatsContainer" class="subcontainer" style="display:none;">
+      <h3>Stats</h3>
+      <div id="tokenStats"></div>
+    </div>
+
+    <div id="tokenActionsContainer" class="subcontainer" style="display:none;">
+      <h3>Actions</h3>
+      <div id="tokenActions"></div>
+    </div>
+  </div>
+</div>
+
+<button id="blueEndTurnBtn" style="
+  position: fixed; bottom: 15px; right: 15px; z-index: 10000;
+  width: 200px; height: 40px; padding: 8px 0; font-weight: bold; border-radius: 8px;
+  background-color: #004085; color: white; border: 2px solid gold;
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+  box-sizing: border-box;
+  transition: background-color 0.3s ease;
+">
+  Hold to End Turn
+  <div id="blueEndTurnFill" style="
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 5px;
+  background: gold;
+  width: 0%;
+  transition: width 0s;
+  border-radius: 0 0 8px 8px;
+  pointer-events: none;
+"></div>
+</button>
+
+<script src="setup.js"></script>
+<script src="production.js"></script>
+<script src="movement.js"></script>
+<script src="turn.js"></script>
+
+</body>
+</html>

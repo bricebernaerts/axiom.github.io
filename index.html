@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Axiom - Main Menu</title>
+  <style>
+    @keyframes glow {
+      0%, 100% {
+        text-shadow: 0 0 8px #ff6f00, 0 0 20px #ff6f00;
+      }
+      50% {
+        text-shadow: 0 0 15px #ff9400, 0 0 25px #ff9400;
+      }
+    }
+
+    body {
+      position: relative;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #0a1a39 0%, #1a2a6c 60%),
+                  linear-gradient(45deg, rgba(255,111,0,0.2), rgba(0,123,255,0.2));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      gap: 30px;
+      color: white;
+      overflow: hidden;
+    }
+
+    /* Decorative arcs behind title */
+    .background-arcs {
+      position: absolute;
+      top: 45px;
+      width: 400px;
+      height: 200px;
+      pointer-events: none;
+      z-index: 0;
+      filter: blur(30px);
+    }
+    .arc1 {
+      box-shadow: 0 0 80px 30px #ff6f00;
+      border-radius: 50% / 100%;
+      width: 250px;
+      height: 150px;
+      position: absolute;
+      left: -50px;
+      top: 10px;
+      opacity: 0.25;
+      transform: rotate(15deg);
+    }
+    .arc2 {
+      box-shadow: 0 0 100px 40px #007bff;
+      border-radius: 50% / 100%;
+      width: 280px;
+      height: 170px;
+      position: absolute;
+      right: -100px;
+      top: 10px;
+      opacity: 0.3;
+      transform: rotate(-20deg);
+    }
+
+    h1 {
+      font-size: 5rem;
+      color: #ff6f00;
+      position: relative;
+      z-index: 1;
+      margin-bottom: 0;
+      padding-bottom: 12px;
+      border-bottom: 5px solid #ff6f00;
+      letter-spacing: 0.1em;
+    }
+
+    button {
+      width: 240px;
+      padding: 14px 0;
+      font-size: 1.4rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      color: white;
+      background-color: #007bff;
+      box-shadow: 0 4px 15px rgba(0, 123, 255, 0.6);
+      transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+      position: relative;
+      z-index: 1;
+    }
+
+    button:hover {
+      background-color: #ff6f00;
+      transform: scale(1.05);
+      color: white;
+    }
+
+    /* Container for buttons for spacing */
+    .button-container {
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      z-index: 1;
+    }
+
+    /* Modal styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+  .modal-content {
+    position: fixed;   /* was static relative */
+    top: 80px;        /* fixed distance from top */
+    left: 50%;        /* center horizontally */
+    transform: translateX(-50%);
+    background: #1a2a6c;
+    padding: 20px 30px;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 95vw;
+    color: white;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    user-select: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(4, auto);
+    gap: 10px 10px;
+    z-index: 1001;
+    box-shadow: 0 0 30px #ff6f00;  /* slightly stronger shadow */
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+
+    .modal-content h2 {
+      grid-column: 1 / -1;
+      margin-top: 0;
+      border-bottom: 2px solid #ff6f00;
+      padding-bottom: 8px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    /* Category label with background square */
+    .category-label {
+      background-color: #ff6f00;
+      color: black;
+      font-weight: bold;
+      font-size: 1.1rem;
+      padding: 18px 18px;
+      text-align: center;
+      border-radius: 6px;
+      user-select: text;
+      display: flex;
+      justify-content: center;
+      height: 18px;
+      width: 180px ;
+    }
+
+    /* Options container for each category */
+    .options-cell {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      min-height: 18px;
+    }
+
+    /* Each option box */
+    .option-box {
+      user-select: none;
+      background-color: black;
+      border: 2px solid #284a8a;
+      border-radius: 2px;
+      padding: 14px 22px;
+      min-width: 95px;
+      font-weight: 600;
+      cursor: pointer;
+      color: white;
+      position: relative;
+      font-size: 1rem;
+      text-align: center;
+    }
+
+    .option-box.selected {
+      background-color: black;
+      color: white;
+    }
+
+    .option-box:hover {
+      background-color: #ff8c00;
+      color: black;
+    }
+
+    /* Dropdown content container (hidden by default) */
+    .option-dropdown {
+      position: absolute;
+      top: 52px;
+      left: 0;
+      background: #1a2a6c;
+      border: 2px solid #ff6f00;
+      border-radius: 8px;
+      box-shadow: 0 0 15px #ff6f00;
+      z-index: 100;
+      display: none;
+      min-width: 140px;
+      user-select: none;
+    }
+
+    .option-dropdown.visible {
+      display: block;
+    }
+
+    .option-dropdown div {
+      padding: 10px 15px;
+      cursor: pointer;
+      white-space: nowrap;
+      font-size: 1rem;
+      color: white;
+      border-bottom: 1px solid #284a8a;
+      transition: background-color 0.2s ease;
+    }
+
+    .option-dropdown div:last-child {
+      border-bottom: none;
+    }
+
+    .option-dropdown div:hover {
+      background-color: #ff6f00;
+      color: black;
+    }
+
+  .modal-buttons {
+    grid-column: 1 / -1;
+    text-align: center;
+    margin-top: 10px;
+    position: sticky;
+    bottom: 0;
+    background: #1a2a6c;
+    padding-top: 10px;
+    border-top: 1px solid #ff6f00;
+    z-index: 1002;
+  }
+
+  </style>
+</head>
+<body>
+  <div class="background-arcs">
+    <div class="arc1"></div>
+    <div class="arc2"></div>
+  </div>
+
+  <h1>Axiom</h1>
+
+  <div class="button-container">
+    <button id="hotseat">Hotseat</button>
+    <button id="versusAI">Versus AI</button>
+    <button id="startJourney">Custom Map</button>
+    <button id="deckBuilder">Options</button>
+    <button id="exit">Exit</button>
+  </div>
+
+  <div id="customMapModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-content">
+      <h2 id="modalTitle">Customize Map Settings</h2>
+    
+      <div class="category-label" data-key="mapSize">Map Size</div>
+      <div class="options-cell" data-key="mapSize"></div>
+    
+      <div class="category-label" data-key="mapType">Map Type</div>
+      <div class="options-cell" data-key="mapType"></div>
+    
+      <div class="category-label" data-key="difficulty">Difficulty</div>
+      <div class="options-cell" data-key="difficulty"></div>
+    
+      <div class="category-label" data-key="gameSpeed">Game Speed</div>
+      <div class="options-cell" data-key="gameSpeed"></div>
+    
+      <div class="modal-buttons">
+        <button id="startGameBtn">Start Game</button>
+        <button id="cancelBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Option data: keys and option arrays (label, value)
+    const OPTIONS = {
+      mapSize: [
+        {label: "Small", value: "Small"},
+        {label: "Medium", value: "Medium"},
+        {label: "Large", value: "Large"},
+        {label: "Huge", value: "Huge"}
+      ],
+      mapType: [
+        {label: "Pangea", value: "Pangea"},
+        {label: "Lake", value: "Lake"},
+        {label: "Continents", value: "Continents"},
+        {label: "Islands", value: "Islands"}
+
+      ],
+      difficulty: [
+        {label: "Easy", value: "Easy"},
+        {label: "Normal", value: "Normal"},
+        {label: "Hard", value: "Hard"},
+        {label: "Insane", value: "Insane"}
+      ],
+      gameSpeed: [
+        {label: "Quick", value: "Quick"},
+        {label: "Normal", value: "Normal"},
+        {label: "Slow", value: "Slow"},
+        {label: "Marathon", value: "Marathon"}
+      ],
+    };
+
+    // Track current selections
+    const selections = {
+      mapSize: "Small",
+      mapType: "Pangea",
+      difficulty: "Easy",
+      gameSpeed: "Quick",
+    };
+
+    function createOptionBox(categoryKey, option, isSelected) {
+      const box = document.createElement('div');
+      box.className = 'option-box';
+      if (isSelected) box.classList.add('selected');
+      box.textContent = option.label;
+
+      // Dropdown container for alternative options (initially hidden)
+      const dropdown = document.createElement('div');
+      dropdown.className = 'option-dropdown';
+
+      OPTIONS[categoryKey].forEach(opt => {
+        if (opt.value === option.value) return; // skip current selected
+
+        const optDiv = document.createElement('div');
+        optDiv.textContent = opt.label;
+        optDiv.addEventListener('click', e => {
+          e.stopPropagation();
+          // Change selection
+          selections[categoryKey] = opt.value;
+          // Update UI
+          updateOptionsUI();
+          dropdown.classList.remove('visible');
+        });
+        dropdown.appendChild(optDiv);
+      });
+
+      box.appendChild(dropdown);
+
+      box.addEventListener('click', e => {
+        e.stopPropagation();
+        // Toggle showing dropdown
+        const visible = dropdown.classList.contains('visible');
+        document.querySelectorAll('.option-dropdown').forEach(d => d.classList.remove('visible'));
+        if (!visible) dropdown.classList.add('visible');
+      });
+
+      return box;
+    }
+
+    function updateOptionsUI() {
+      Object.entries(selections).forEach(([category, selectedValue]) => {
+        const container = document.querySelector(`.options-cell[data-key="${category}"]`);
+        if(!container) return;
+        container.innerHTML = ''; // clear
+
+        if (OPTIONS[category].length === 0) return; // no options to display (placeholder)
+
+        // Show single option box with current selection
+        // Defensive fallback for null selection
+        let optionData;
+        if(selectedValue === null) {
+          optionData = OPTIONS[category][0];
+          selections[category] = optionData.value;
+        } else {
+          optionData = OPTIONS[category].find(o => o.value === selectedValue) || OPTIONS[category][0];
+          selections[category] = optionData.value;
+        }
+        const box = createOptionBox(category, optionData, true);
+        container.appendChild(box);
+      });
+    }
+
+    // Close any dropdown if clicking outside
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.option-dropdown').forEach(d => d.classList.remove('visible'));
+    });
+
+    // Modal open/close buttons and handling
+    const modal = document.getElementById('customMapModal');
+    const startJourneyBtn = document.getElementById('startJourney');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const startGameBtn = document.getElementById('startGameBtn');
+
+    startJourneyBtn.onclick = () => {
+      modal.classList.add('active');
+      updateOptionsUI();
+    };
+
+    cancelBtn.onclick = () => {
+      modal.classList.remove('active');
+    };
+
+    // Start game button logs current selections and closes modal
+      startGameBtn.onclick = () => {
+        const chosenMapType = selections.mapType;
+        const mapSize = selections.mapSize;
+        const difficulty = selections.difficulty;
+        const gameSpeed = selections.gameSpeed;
+        // Build URL with mapType param
+        const params = new URLSearchParams({
+          mapType: chosenMapType,
+          mapSize,
+          difficulty,
+          gameSpeed
+        }).toString();
+        window.location.href = `gameboard.html?${params}`;
+      };
+
+
+    document.getElementById('hotseat').onclick = () => window.location.href = 'gameboard.html';
+    document.getElementById('versusAI').onclick = () => window.location.href = 'gameboard.html';
+    document.getElementById('deckBuilder').onclick = () => alert('Deck Builder mode is not implemented yet.');
+    document.getElementById('exit').onclick = () => alert('Exit button pressed. Close the tab or browser to exit.');
+
+
+
+  </script>
+
+</body>
+</html>
