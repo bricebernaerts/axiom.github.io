@@ -1159,6 +1159,7 @@ function setupStartingPositions(board) {
     blueStartHex.outerType = 'plains';
     blueStartHex.innerVariables.population = 1000;
     blueStartHex.outerVariables.population = 1000;
+    blueStartHex.innerVariables.foodProduction = 1000;
     blueStartHex.outerVariables.foodProduction = 1000;
     blueStartHex.innerVariables.control = 100;
     blueStartHex.outerVariables.control = 25;
@@ -1170,6 +1171,7 @@ function setupStartingPositions(board) {
     redStartHex.outerType = 'plains';
     redStartHex.innerVariables.population = 1000;
     redStartHex.outerVariables.population = 1000;
+    redStartHex.innerVariables.foodProduction = 1000;
     redStartHex.outerVariables.foodProduction = 1000;
     redStartHex.innerVariables.control = 100;
     redStartHex.outerVariables.control = 25;
