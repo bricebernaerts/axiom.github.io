@@ -3,10 +3,35 @@ const ctx = canvas.getContext('2d');
 
 let lastClickTime = 0;
 const DOUBLE_CLICK_DELAY = 300; // milliseconds
+let singleClickTimeout = null;
 
 let playerAbsolutism = {
   blue: 0,  // 0 to 100, %
   red: 0
+};
+
+let globalFoodStorage = {
+  blue: 1000, // initialized or from starting game state
+  red: 1000
+};
+
+const foodRingMult = {
+  outer: {
+    desert: 0.2,
+    plains: 1.0,
+    woods: 0.6,
+    hills: 0.8,
+    mountains: 0.5,
+    coast: 1.2,
+    water: 0.2
+  },
+  inner: {
+    hamlet: 0.8,
+    town: 0.7,
+    city: 0.6,
+    metropolis: 0.5,
+    island: 1.0,
+  }
 };
 
 // Simple beep sound for illegal actions
@@ -39,138 +64,234 @@ function capitalize(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
+function populationGrowth() {
+  function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
+
+  let blueFood = globalFoodStorage.blue;
+  let redFood = globalFoodStorage.red;
+
+  for (const hex of board) {
+    const capture = getCapture(hex);
+
+    for (const ring of ['inner', 'outer']) {
+      const owner = capture[ring];
+      if (owner !== 'blue' && owner !== 'red') continue;  // Skip unowned rings
+      
+      const vars = ring === 'inner' ? hex.innerVariables : hex.outerVariables;
+      if (!vars) continue;
+      const population = vars.population || 0;
+      if (population <= 0) continue;
+
+      vars.foodStockpile = vars.foodStockpile || 0;
+      let foodNeeded = population;
+      
+      // Subtract food needed locally first
+      vars.foodStockpile -= foodNeeded;
+
+      if (vars.foodStockpile < 0) {
+        const neededFood = -vars.foodStockpile;
+
+        if (owner === 'blue') {
+          const foodUsed = Math.min(neededFood, blueFood);
+          vars.foodStockpile += foodUsed;
+          blueFood -= foodUsed;
+
+          if (vars.foodStockpile < 0) {
+            const starvation = -vars.foodStockpile;
+            vars.foodStockpile = 0;
+            let currentPop = population;
+            for (let i=0; i<starvation && currentPop > 0; i++) {
+              currentPop--;
+              if (blueFood < 0) blueFood = Math.min(blueFood + 1, 0);
+            }
+            vars.population = currentPop;
+          }
+        } else if (owner === 'red') {
+          const foodUsed = Math.min(neededFood, redFood);
+          vars.foodStockpile += foodUsed;
+          redFood -= foodUsed;
+
+          if (vars.foodStockpile < 0) {
+            const starvation = -vars.foodStockpile;
+            vars.foodStockpile = 0;
+            let currentPop = population;
+            for (let i=0; i<starvation && currentPop > 0; i++) {
+              currentPop--;
+              if (redFood < 0) redFood = Math.min(redFood + 1, 0);
+            }
+            vars.population = currentPop;
+          }
+        }
+      }
+    }
+  }
+
+  globalFoodStorage.blue = clamp(blueFood, 0, Number.MAX_SAFE_INTEGER);
+  globalFoodStorage.red = clamp(redFood, 0, Number.MAX_SAFE_INTEGER);
+
+  // Now apply population growth only to owned rings
+  for (const hex of board) {
+    const capture = getCapture(hex);
+
+    for (const ring of ['inner', 'outer']) {
+      const owner = capture[ring];
+      if (owner !== 'blue' && owner !== 'red') continue;
+
+      const vars = ring === 'inner' ? hex.innerVariables : hex.outerVariables;
+      if (!vars) continue;
+      let pop = vars.population || 0;
+      if (pop <= 0) continue;
+
+      const health = clamp(vars.health || 0, 0, 100) / 100;
+      const happiness = clamp(vars.happiness || 0, 0, 100) / 100;
+      const wealth = clamp(vars.wealth || 0, 0, 1000);
+      const foodStock = vars.foodStockpile || 0;
+      const literacy = clamp(vars.literacy || 0, 0, 100) / 100;
+      const control = clamp(vars.control || 0, 0, 100);
+      const devastation = Math.max(0, 100 - control) / 100;
+
+      let wealthBonus = 0;
+      if (wealth >= 800) wealthBonus = 0.05;
+      else if (wealth >= 500) wealthBonus = 0.03;
+      else if (wealth >= 200) wealthBonus = 0.02;
+
+      const foodBonus = Math.min(foodStock / (2 * pop), 1) * 0.1;
+      const literacyPenalty = -0.05 * literacy;
+      const devastationPenalty = -0.1 * devastation;
+
+      let growthRate = 1.0 + (health * 0.1) + (happiness * 0.05) + wealthBonus + foodBonus + literacyPenalty + devastationPenalty;
+
+      growthRate = Math.max(growthRate, 0);
+      growthRate = Math.ceil(growthRate * 100) / 100;
+
+      vars.population = Math.floor(pop * growthRate);
+      vars.growth = growthRate;
+    }
+  }
+}
+
 function manaGeneration() {
-    // Totals per player for each variable
-    const totals = {
-        blue: { food: 0, wealth: 0, science: 0, culture: 0, faith: 0, production: 0, population: 0, power: 0, absolutism: 0 },
-        red: { food: 0, wealth: 0, science: 0, culture: 0, faith: 0, production: 0, population: 0, power: 0, absolutism: 0 },
-    };
+  const totals = {
+    blue: { food: 0, foodProduction: 0, wealth: 0, science: 0, culture: 0, faith: 0, production: 0, population: 0, power: 0, absolutism: 0 },
+    red: { food: 0, foodProduction: 0, wealth: 0, science: 0, culture: 0, faith: 0, production: 0, population: 0, power: 0, absolutism: 0 },
+  };
 
-    for (const hex of board) {
-        const capture = getCapture(hex);
+  for (const hex of board) {
+    const capture = getCapture(hex);
 
-        ['inner', 'outer'].forEach(ring => {
-            const owner = capture[ring];
-            if (!owner) return;
+    ['inner', 'outer'].forEach(ring => {
+      const owner = capture[ring];
+      if (!owner) return;
 
-            // Variables for this ring
-            const vars = ring === 'inner' ? hex.innerVariables : hex.outerVariables;
+      const vars = ring === 'inner' ? hex.innerVariables : hex.outerVariables;
+      if (!vars) return;
 
-            // Control percentage (0-100)
-            const control = vars.control !== undefined ? vars.control / 100 : 0;
+      const control = (vars.control !== undefined ? vars.control : 0) / 100;
 
-            // Raw local variables (default 0)
-            const food = vars.foodProduction || 0;
-            const wealth = vars.wealth || 0;
-            const science = vars.science || 0;
-            const culture = vars.culture || 0;
-            const faith = vars.faith || 0;
-            const power = vars.power || 0;
-            const production = vars.production || 0;
-            const happiness = (vars.happiness || 0) / 100;
-            const crime = (100 - (vars.control || 0)) / 100 / 2;  // approx crime % (50% as max half crime)
-            const health = (vars.health || 0) / 100;
-            const literacy = (vars.literacy || 0) / 100;
-            const tax = Math.floor((vars.wealth || 0) / 10) / 100; // local tax from wealth/10%
+      const foodProduction = vars.foodProduction || 0;
+      const wealth = vars.wealth || 0;
+      const science = vars.science || 0;
+      const culture = vars.culture || 0;
+      const faith = vars.faith || 0;
+      const power = vars.power || 0;
+      const production = vars.production || 0;
+      const happiness = (vars.happiness || 0) / 100;
+      const crime = (100 - (vars.control || 0)) / 100 / 2;
+      const health = (vars.health || 0) / 100;
+      const literacy = (vars.literacy || 0) / 100;
+      const tax = Math.floor(wealth / 10) / 100;
 
-            // Calculate multipliers
-            const happinessMult = 1 + happiness;
-            const crimeMult = 1 - crime;
-            const healthMult = 1 + health;
-            const taxMult = tax;
-            const literacyMult = literacy;
-            const controlMult = control;
+      const happinessMult = 1 + happiness;
+      const crimeMult = 1 - crime;
+      const healthMult = 1 + health;
+      const taxMult = tax;
+      const literacyMult = literacy;
+      const controlMult = control;
 
-            // Calculate incomes:
+      const terrainType = vars.innerType || vars.outerType || ring;
+      const ringFoodMult = (foodRingMult[ring] && foodRingMult[ring][terrainType]) || 1;
 
-            // For wealth: multiply by control * tax * happiness * crime * health
-            const wealthIncome = wealth * controlMult * taxMult * happinessMult * crimeMult * healthMult;
+      // Calculate raw food income with multipliers
+      const rawFoodIncome = foodProduction * controlMult * happinessMult * crimeMult * healthMult * ringFoodMult;
 
-            // For science: multiply by control * literacy * happiness * crime * health
-            const scienceIncome = science * controlMult * literacyMult * happinessMult * crimeMult * healthMult;
+      // Add food income first to local foodStockpile
+      vars.foodStockpile = (vars.foodStockpile || 0) + rawFoodIncome;
 
-            // For food, culture, faith, production: multiply by control * happiness * crime * health
-            const foodIncome = food * controlMult * happinessMult * crimeMult * healthMult;
-            const cultureIncome = culture * controlMult * happinessMult * crimeMult * healthMult;
-            const faithIncome = faith * controlMult * happinessMult * crimeMult * healthMult;
-            const productionIncome = production * controlMult * happinessMult * crimeMult * healthMult;
-            const powerIncome = power * controlMult * happinessMult * crimeMult * healthMult;
+      // Limit local stockpile to twice population
+      const maxLocalFood = 5 * (vars.population || 0);
 
-            // Population is sum but no multipliers
-            const populationRaw = vars.population || 0;
+      // Spill excess food to global storage
+      if (vars.foodStockpile > maxLocalFood) {
+        const excess = vars.foodStockpile - maxLocalFood;
+        vars.foodStockpile = maxLocalFood;
+        totals[owner].food += excess;
+      }
 
-            // Aggregate income into totals
-            totals[owner].food += foodIncome;
-            totals[owner].wealth += wealthIncome;
-            totals[owner].science += scienceIncome;
-            totals[owner].culture += cultureIncome;
-            totals[owner].faith += faithIncome;
-            totals[owner].power += powerIncome;
-            totals[owner].production += productionIncome;
-            totals[owner].population += populationRaw;
-        });
-    }
-    
-    totals.blue.absolutism = playerAbsolutism.blue;
-    totals.red.absolutism = playerAbsolutism.red;
+      // Accumulate total local food production (for UI in parentheses)
+      totals[owner].foodProduction += rawFoodIncome;
 
-    // Get span elements for blue and red with current stored total and income
-    const blueMana = {
-        current: {
-            food: parseFloat(document.getElementById('blueFoodValue')?.textContent) || 0,
-            wealth: parseFloat(document.getElementById('blueGoldValue')?.textContent) || 0,
-            science: parseFloat(document.getElementById('blueScienceValue')?.textContent) || 0,
-            culture: parseFloat(document.getElementById('blueCultureValue')?.textContent) || 0,
-            faith: parseFloat(document.getElementById('blueFaithValue')?.textContent) || 0,
-            production: parseFloat(document.getElementById('blueProductionValue')?.textContent) || 0,
-            population: parseFloat(document.getElementById('bluePopulationValue')?.textContent) || 0,
-            absolutism: parseFloat(document.getElementById('blueAbsolutismValue')?.textContent) || 0,
-            power: parseFloat(document.getElementById('bluePowerValue')?.textContent) || 0,
-        },
-        income: totals.blue
-    };
+      // Calculate other incomes
+      const wealthIncome = wealth * controlMult * taxMult * happinessMult * crimeMult * healthMult;
+      const scienceIncome = science * controlMult * literacyMult * happinessMult * crimeMult * healthMult;
+      const cultureIncome = culture * controlMult * happinessMult * crimeMult * healthMult;
+      const faithIncome = faith * controlMult * happinessMult * crimeMult * healthMult;
+      const productionIncome = production * controlMult * happinessMult * crimeMult * healthMult;
+      const powerIncome = power * controlMult * happinessMult * crimeMult * healthMult;
+      const populationRaw = vars.population || 0;
 
-    const redMana = {
-        current: {
-            food: parseFloat(document.getElementById('redFoodValue')?.textContent) || 0,
-            wealth: parseFloat(document.getElementById('redGoldValue')?.textContent) || 0,
-            science: parseFloat(document.getElementById('redScienceValue')?.textContent) || 0,
-            culture: parseFloat(document.getElementById('redCultureValue')?.textContent) || 0,
-            faith: parseFloat(document.getElementById('redFaithValue')?.textContent) || 0,
-            production: parseFloat(document.getElementById('redProductionValue')?.textContent) || 0,
-            population: parseFloat(document.getElementById('redPopulationValue')?.textContent) || 0,
-            absolutism: parseFloat(document.getElementById('redAbsolutismValue')?.textContent) || 0,
-            power: parseFloat(document.getElementById('redPowerValue')?.textContent) || 0,
-        },
-        income: totals.red
-    };
+      totals[owner].wealth += wealthIncome;
+      totals[owner].science += scienceIncome;
+      totals[owner].culture += cultureIncome;
+      totals[owner].faith += faithIncome;
+      totals[owner].power += powerIncome;
+      totals[owner].production += productionIncome;
+      totals[owner].population += populationRaw;
+    });
+  }
 
-    // Helper to format display "current - (+income)"
-    function formatVal(curr, inc) {
-        return `${Math.floor(curr)} (+${Math.floor(inc)})`;
-    }
+  totals.blue.absolutism = playerAbsolutism.blue;
+  totals.red.absolutism = playerAbsolutism.red;
 
-    // Update blue status bar values and income, adding income to current
-    document.getElementById('blueFoodValue').textContent = formatVal(blueMana.current.food + blueMana.income.food, blueMana.income.food);
-    document.getElementById('blueGoldValue').textContent = formatVal(blueMana.current.wealth + blueMana.income.wealth, blueMana.income.wealth);
-    document.getElementById('blueScienceValue').textContent = formatVal(blueMana.current.science + blueMana.income.science, blueMana.income.science);
-    document.getElementById('blueCultureValue').textContent = formatVal(blueMana.current.culture + blueMana.income.culture, blueMana.income.culture);
-    document.getElementById('blueFaithValue').textContent = formatVal(blueMana.current.faith + blueMana.income.faith, blueMana.income.faith);
-    document.getElementById('blueProductionValue').textContent = formatVal(blueMana.current.production + blueMana.income.production, blueMana.income.production);
-    document.getElementById('bluePowerValue').textContent = formatVal(blueMana.current.power + blueMana.income.power, blueMana.income.power);
-    document.getElementById('bluePopulationValue').textContent = `${Math.floor(blueMana.income.population)}`; // population just sum
-    document.getElementById('blueAbsolutismValue').textContent = `${Math.floor(totals.blue.absolutism)}%`;
+  // Add excess food to global storage
+  globalFoodStorage.blue += totals.blue.food;
+  globalFoodStorage.red += totals.red.food;
 
-    // Update red status bar values similarly
-    document.getElementById('redFoodValue').textContent = formatVal(redMana.current.food + redMana.income.food, redMana.income.food);
-    document.getElementById('redGoldValue').textContent = formatVal(redMana.current.wealth + redMana.income.wealth, redMana.income.wealth);
-    document.getElementById('redScienceValue').textContent = formatVal(redMana.current.science + redMana.income.science, redMana.income.science);
-    document.getElementById('redCultureValue').textContent = formatVal(redMana.current.culture + redMana.income.culture, redMana.income.culture);
-    document.getElementById('redFaithValue').textContent = formatVal(redMana.current.faith + redMana.income.faith, redMana.income.faith);
-    document.getElementById('redProductionValue').textContent = formatVal(redMana.current.production + redMana.income.production, redMana.income.production);
-    document.getElementById('redPowerValue').textContent = formatVal(redMana.current.power + redMana.income.power, redMana.income.power);
-    document.getElementById('redPopulationValue').textContent = `${Math.floor(redMana.income.population)}`;
-    document.getElementById('blueAbsolutismValue').textContent = `${Math.floor(totals.red.absolutism)}%`;
+  // Max food based on population * 3
+  const blueMaxFood = Math.floor(totals.blue.population * 30);
+  const redMaxFood = Math.floor(totals.red.population * 30);
+
+  // Clamp global food stock
+  globalFoodStorage.blue = Math.min(Math.max(globalFoodStorage.blue, 0), blueMaxFood);
+  globalFoodStorage.red = Math.min(Math.max(globalFoodStorage.red, 0), redMaxFood);
+
+  function formatVal(curr, inc) {
+    return `${Math.floor(curr)} (+${Math.floor(inc)})`;
+  }
+  function formatFood(curr, max, production) {
+    return `${Math.floor(curr)} / ${max} (+${Math.floor(production)})`;
+  }
+
+  // Update UI with total population and other stats
+  document.getElementById('bluePopulationValue').textContent = `${Math.floor(totals.blue.population)}`;
+  document.getElementById('redPopulationValue').textContent = `${Math.floor(totals.red.population)}`;
+
+  document.getElementById('blueGoldValue').textContent = formatVal(totals.blue.wealth, totals.blue.wealth);
+  document.getElementById('blueScienceValue').textContent = formatVal(totals.blue.science, totals.blue.science);
+  document.getElementById('blueCultureValue').textContent = formatVal(totals.blue.culture, totals.blue.culture);
+  document.getElementById('blueFaithValue').textContent = formatVal(totals.blue.faith, totals.blue.faith);
+  document.getElementById('blueProductionValue').textContent = formatVal(totals.blue.production, totals.blue.production);
+  document.getElementById('bluePowerValue').textContent = formatVal(totals.blue.power, totals.blue.power);
+  document.getElementById('blueFoodValue').textContent = formatFood(globalFoodStorage.blue, blueMaxFood, totals.blue.foodProduction);
+  document.getElementById('blueAbsolutismValue').textContent = `${Math.floor(totals.blue.absolutism)}%`;
+
+  document.getElementById('redGoldValue').textContent = formatVal(totals.red.wealth, totals.red.wealth);
+  document.getElementById('redScienceValue').textContent = formatVal(totals.red.science, totals.red.science);
+  document.getElementById('redCultureValue').textContent = formatVal(totals.red.culture, totals.red.culture);
+  document.getElementById('redFaithValue').textContent = formatVal(totals.red.faith, totals.red.faith);
+  document.getElementById('redProductionValue').textContent = formatVal(totals.red.production, totals.red.production);
+  document.getElementById('redPowerValue').textContent = formatVal(totals.red.power, totals.red.power);
+  document.getElementById('redFoodValue').textContent = formatFood(globalFoodStorage.red, redMaxFood, totals.red.foodProduction);
+  document.getElementById('redAbsolutismValue').textContent = `${Math.floor(totals.red.absolutism)}%`;
 }
 
   // Helpers
@@ -193,7 +314,9 @@ function manaGeneration() {
     if (selectedHex && selectedRing) {
       const variables = selectedRing === 'inner' ? selectedHex.innerVariables : selectedHex.outerVariables;
       const popVal = variables.population || 0;
-      populationContainer.querySelector('h3').textContent = `Population: ${popVal}`;
+      const growthRate = variables.growth || 1.0; // fallback to 1.0
+      const growthPercent = ((growthRate - 1) * 100).toFixed(1);
+      populationContainer.querySelector('h3').textContent = `Population: ${popVal} (${growthPercent}%)`;
     }
     document.getElementById("buildingsContainer").style.display = "block";
     document.getElementById("tokenStatsContainer").style.display = "none";
@@ -217,6 +340,9 @@ function manaGeneration() {
     const variables = selectedRing === 'inner' ? selectedHex.innerVariables : selectedHex.outerVariables;
     const controlPct = variables.control || 0;
     const devastationPct = 100 - controlPct;
+    const foodStorage = variables.foodStockpile || 0;
+    const maxFoodStorage = (variables.population || 0) * 5;
+    terrainDesc += `<div><b>Food Storage:</b> ${Math.floor(foodStorage)}/${maxFoodStorage}</div>`;
 
     terrainDetails.innerHTML = terrainDesc;
 
@@ -401,68 +527,88 @@ function handleTokenClick(e, token) {
   const isRightClick = (e.button === 2);
 
   if (isLeftClick) {
+    const now = Date.now();
+
+    // Cancel any pending single-click action on new click
+    if (singleClickTimeout) {
+      clearTimeout(singleClickTimeout);
+      singleClickTimeout = null;
+    }
+
+    // Shift + left click: add tokens of same player & ring at hex to selection
     if (e.shiftKey) {
-      // Shift + left click: add tokens of same player & ring to selection
       const tokensToAdd = token.hex.tokenInstances.filter(t =>
-        t.player === token.player && t.ring === token.ring && !selectedTokens.includes(t) && t.quantity > 0
+        t.player === token.player &&
+        t.ring === token.ring &&
+        !selectedTokens.includes(t) &&
+        t.quantity > 0
       );
       if (tokensToAdd.length > 0) {
         selectedTokens = selectedTokens.concat(tokensToAdd);
         selectedHex = token.hex;
         selectedRing = token.ring;
-        // Do NOT open token interface on left click, just clear any ring UI:
         document.getElementById('infoDiv').style.display = 'none';
         draw();
       }
-    } else {
-      // Double-click logic (same)
-      const now = Date.now();
-      if (handleTokenClick.lastClick &&
-        (now - handleTokenClick.lastClick.time < DOUBLE_CLICK_DELAY) &&
-        handleTokenClick.lastClick.token === token) {
-          selectedHex = token.hex;
-          selectedRing = token.ring;
-          selectedTokens = token.hex.tokenInstances.filter(t => t.player === token.player && t.ring === token.ring);
-          // Do NOT open token interface on left click:
-          document.getElementById('infoDiv').style.display = 'none';
-          draw();
-          handleTokenClick.lastClick = null;
-          e.preventDefault();
-          return;
-      } 
-      else {
-        if (token.quantity <= 0) {
-          // Ignore tokens assigned to moves and thus invisible
-          illegalSound.play(); 
-          return;
-        }
-        if (selectedTokens.length === 1 && selectedTokens[0] === token) {
-          selectedTokens = [];
-          selectedHex = null;
-          selectedRing = null;
-          document.getElementById('infoDiv').style.display = 'none';
-          draw();
-        } else {
-          selectedTokens = [token];
-          selectedHex = token.hex;
-          selectedRing = token.ring;
-          document.getElementById('infoDiv').style.display = 'none'; // hide popup on left click
-          draw();
-        }
-      }
-      handleTokenClick.lastClick = { time: now, token };
+      return;
     }
-  }
-    else if (isRightClick) {
-      // Right click on token: just select tokens, no interface open
-      selectedTokens = [token];
+
+    // Double click detection: second click on same token within delay
+    if (
+      handleTokenClick.lastClick &&
+      now - handleTokenClick.lastClick.time < DOUBLE_CLICK_DELAY &&
+      handleTokenClick.lastClick.token === token
+    ) {
+      // Select all tokens for player & ring on this hex
       selectedHex = token.hex;
       selectedRing = token.ring;
-      // Do NOT call updateTokenInterface()
+      selectedTokens = token.hex.tokenInstances.filter(t =>
+        t.player === token.player && t.ring === token.ring && t.quantity > 0
+      );
+      document.getElementById('infoDiv').style.display = 'none';
       draw();
+      handleTokenClick.lastClick = null;
       e.preventDefault();
+      return;
     }
+
+    // Schedule single click action with delay for double-click detection
+    singleClickTimeout = setTimeout(() => {
+      if (token.quantity <= 0) {
+        illegalSound.play();
+        return;
+      }
+      if (selectedTokens.length === 1 && selectedTokens[0] === token) {
+        // Deselect token
+        selectedTokens = [];
+        selectedHex = null;
+        selectedRing = null;
+        document.getElementById('infoDiv').style.display = 'none';
+        draw();
+      } else {
+        // Select clicked token
+        selectedTokens = [token];
+        selectedHex = token.hex;
+        selectedRing = token.ring;
+        document.getElementById('infoDiv').style.display = 'none'; // hide popups on left click
+        draw();
+      }
+      singleClickTimeout = null;
+    }, DOUBLE_CLICK_DELAY);
+
+    handleTokenClick.lastClick = { time: now, token };
+  } 
+  else if (isRightClick) {
+    // Right click: immediately select clicked token without opening interface
+    selectedTokens = [token];
+    selectedHex = token.hex;
+    selectedRing = token.ring;
+    // Do NOT open token interface, just redraw
+    draw();
+    e.preventDefault();
+  }
 }
+
 
 // Handle clicks on ring area (not on tokens)
 function handleRingClick(e, hex, ring) {
@@ -815,10 +961,12 @@ function endTurn() {
   selectedHex = null;
   selectedRing = null;
 
-  updateAllCaptures();
-  manaGeneration();
   progressProductionLines();
+  updateAllCaptures();
   draw();
+  manaGeneration();
+  populationGrowth();
+
 }
 
 // Blue button hold handlers
