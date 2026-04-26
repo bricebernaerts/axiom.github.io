@@ -50,7 +50,7 @@ productionInterface.style = `
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   user-select: none;
   display: none;
-  z-index: 1002;
+  z-index: 103;
   box-shadow: 0 0 30px #ff6f00;
   max-height: 70vh;
   overflow-y: auto;
