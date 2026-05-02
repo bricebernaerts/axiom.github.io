@@ -1165,6 +1165,7 @@ function setupStartingPositions(board) {
     blueStartHex.outerVariables.control = 25;
     blueStartHex.innerVariables.wealth = 1000;
     blueStartHex.outerVariables.wealth = 500;
+    blueStartHex.innerVariables.devastation = 10;
 
     // Assign starting types and variables for redStartHex
     redStartHex.innerType = 'metropolis';
@@ -1179,19 +1180,19 @@ function setupStartingPositions(board) {
     redStartHex.outerVariables.wealth = 500;
     
   document.getElementById('blueFoodValue').textContent = '1000';
-  document.getElementById('blueGoldValue').textContent = '500';
+  document.getElementById('blueGoldValue').textContent = '200';
   document.getElementById('blueScienceValue').textContent = '0';
   document.getElementById('blueCultureValue').textContent = '0';
-  document.getElementById('blueFaithValue').textContent = '100';
-  document.getElementById('blueProductionValue').textContent = '500';
+  document.getElementById('blueFaithValue').textContent = '0';
+  document.getElementById('blueProductionValue').textContent = '200';
   document.getElementById('bluePopulationValue').textContent = '1000';
 
   document.getElementById('redFoodValue').textContent = '1000';
   document.getElementById('redGoldValue').textContent = '500';
   document.getElementById('redScienceValue').textContent = '0';
   document.getElementById('redCultureValue').textContent = '0';
-  document.getElementById('redFaithValue').textContent = '100';
-  document.getElementById('redProductionValue').textContent = '500';
+  document.getElementById('redFaithValue').textContent = '0';
+  document.getElementById('redProductionValue').textContent = '200';
   document.getElementById('redPopulationValue').textContent = '1000';
   
     // Clear any existing tokens at start hexes
