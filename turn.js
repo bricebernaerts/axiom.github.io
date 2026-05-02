@@ -5,35 +5,6 @@ let lastClickTime = 0;
 const DOUBLE_CLICK_DELAY = 300; // milliseconds
 let singleClickTimeout = null;
 
-let playerAbsolutism = {
-  blue: 0,  // 0 to 100, %
-  red: 0
-};
-
-let globalFoodStorage = {
-  blue: 1000, // initialized or from starting game state
-  red: 1000
-};
-
-const foodRingMult = {
-  outer: {
-    desert: 0.2,
-    plains: 1.0,
-    woods: 0.6,
-    hills: 0.8,
-    mountains: 0.5,
-    coast: 1.2,
-    water: 0.2
-  },
-  inner: {
-    hamlet: 0.8,
-    town: 0.7,
-    city: 0.6,
-    metropolis: 0.5,
-    island: 1.0,
-  }
-};
-
 // Simple beep sound for illegal actions
 const illegalSound = new Audio('data:audio/wav;base64,UklGRhQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0Yf///w=='); 
 // This is a very short silent wav, replace with your preferred beep base64, or valid URL
@@ -64,236 +35,6 @@ function capitalize(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-function populationGrowth() {
-  function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
-
-  let blueFood = globalFoodStorage.blue;
-  let redFood = globalFoodStorage.red;
-
-  for (const hex of board) {
-    const capture = getCapture(hex);
-
-    for (const ring of ['inner', 'outer']) {
-      const owner = capture[ring];
-      if (owner !== 'blue' && owner !== 'red') continue;  // Skip unowned rings
-      
-      const vars = ring === 'inner' ? hex.innerVariables : hex.outerVariables;
-      if (!vars) continue;
-      const population = vars.population || 0;
-      if (population <= 0) continue;
-
-      vars.foodStockpile = vars.foodStockpile || 0;
-      let foodNeeded = population;
-      
-      // Subtract food needed locally first
-      vars.foodStockpile -= foodNeeded;
-
-      if (vars.foodStockpile < 0) {
-        const neededFood = -vars.foodStockpile;
-
-        if (owner === 'blue') {
-          const foodUsed = Math.min(neededFood, blueFood);
-          vars.foodStockpile += foodUsed;
-          blueFood -= foodUsed;
-
-          if (vars.foodStockpile < 0) {
-            const starvation = -vars.foodStockpile;
-            vars.foodStockpile = 0;
-            let currentPop = population;
-            for (let i=0; i<starvation && currentPop > 0; i++) {
-              currentPop--;
-              if (blueFood < 0) blueFood = Math.min(blueFood + 1, 0);
-            }
-            vars.population = currentPop;
-          }
-        } else if (owner === 'red') {
-          const foodUsed = Math.min(neededFood, redFood);
-          vars.foodStockpile += foodUsed;
-          redFood -= foodUsed;
-
-          if (vars.foodStockpile < 0) {
-            const starvation = -vars.foodStockpile;
-            vars.foodStockpile = 0;
-            let currentPop = population;
-            for (let i=0; i<starvation && currentPop > 0; i++) {
-              currentPop--;
-              if (redFood < 0) redFood = Math.min(redFood + 1, 0);
-            }
-            vars.population = currentPop;
-          }
-        }
-      }
-    }
-  }
-
-  globalFoodStorage.blue = clamp(blueFood, 0, Number.MAX_SAFE_INTEGER);
-  globalFoodStorage.red = clamp(redFood, 0, Number.MAX_SAFE_INTEGER);
-
-  // Now apply population growth only to owned rings
-  for (const hex of board) {
-    const capture = getCapture(hex);
-
-    for (const ring of ['inner', 'outer']) {
-      const owner = capture[ring];
-      if (owner !== 'blue' && owner !== 'red') continue;
-
-      const vars = ring === 'inner' ? hex.innerVariables : hex.outerVariables;
-      if (!vars) continue;
-      let pop = vars.population || 0;
-      if (pop <= 0) continue;
-
-      const health = clamp(vars.health || 0, 0, 100) / 100;
-      const happiness = clamp(vars.happiness || 0, 0, 100) / 100;
-      const wealth = clamp(vars.wealth || 0, 0, 1000);
-      const foodStock = vars.foodStockpile || 0;
-      const literacy = clamp(vars.literacy || 0, 0, 100) / 100;
-      const control = clamp(vars.control || 0, 0, 100);
-      const devastation = Math.max(0, 100 - control) / 100;
-
-      let wealthBonus = 0;
-      if (wealth >= 800) wealthBonus = 0.05;
-      else if (wealth >= 500) wealthBonus = 0.03;
-      else if (wealth >= 200) wealthBonus = 0.02;
-
-      const foodBonus = Math.min(foodStock / (2 * pop), 1) * 0.1;
-      const literacyPenalty = -0.05 * literacy;
-      const devastationPenalty = -0.1 * devastation;
-
-      let growthRate = 1.0 + (health * 0.1) + (happiness * 0.05) + wealthBonus + foodBonus + literacyPenalty + devastationPenalty;
-
-      growthRate = Math.max(growthRate, 0);
-      growthRate = Math.ceil(growthRate * 100) / 100;
-
-      vars.population = Math.floor(pop * growthRate);
-      vars.growth = growthRate;
-    }
-  }
-}
-
-function manaGeneration() {
-  const totals = {
-    blue: { food: 0, foodProduction: 0, wealth: 0, science: 0, culture: 0, faith: 0, production: 0, population: 0, power: 0, absolutism: 0 },
-    red: { food: 0, foodProduction: 0, wealth: 0, science: 0, culture: 0, faith: 0, production: 0, population: 0, power: 0, absolutism: 0 },
-  };
-
-  for (const hex of board) {
-    const capture = getCapture(hex);
-
-    ['inner', 'outer'].forEach(ring => {
-      const owner = capture[ring];
-      if (!owner) return;
-
-      const vars = ring === 'inner' ? hex.innerVariables : hex.outerVariables;
-      if (!vars) return;
-
-      const control = (vars.control !== undefined ? vars.control : 0) / 100;
-
-      const foodProduction = vars.foodProduction || 0;
-      const wealth = vars.wealth || 0;
-      const science = vars.science || 0;
-      const culture = vars.culture || 0;
-      const faith = vars.faith || 0;
-      const power = vars.power || 0;
-      const production = vars.production || 0;
-      const happiness = (vars.happiness || 0) / 100;
-      const crime = (100 - (vars.control || 0)) / 100 / 2;
-      const health = (vars.health || 0) / 100;
-      const literacy = (vars.literacy || 0) / 100;
-      const tax = Math.floor(wealth / 10) / 100;
-
-      const happinessMult = 1 + happiness;
-      const crimeMult = 1 - crime;
-      const healthMult = 1 + health;
-      const taxMult = tax;
-      const literacyMult = literacy;
-      const controlMult = control;
-
-      const terrainType = vars.innerType || vars.outerType || ring;
-      const ringFoodMult = (foodRingMult[ring] && foodRingMult[ring][terrainType]) || 1;
-
-      // Calculate raw food income with multipliers
-      const rawFoodIncome = foodProduction * controlMult * happinessMult * crimeMult * healthMult * ringFoodMult;
-
-      // Add food income first to local foodStockpile
-      vars.foodStockpile = (vars.foodStockpile || 0) + rawFoodIncome;
-
-      // Limit local stockpile to twice population
-      const maxLocalFood = 5 * (vars.population || 0);
-
-      // Spill excess food to global storage
-      if (vars.foodStockpile > maxLocalFood) {
-        const excess = vars.foodStockpile - maxLocalFood;
-        vars.foodStockpile = maxLocalFood;
-        totals[owner].food += excess;
-      }
-
-      // Accumulate total local food production (for UI in parentheses)
-      totals[owner].foodProduction += rawFoodIncome;
-
-      // Calculate other incomes
-      const wealthIncome = wealth * controlMult * taxMult * happinessMult * crimeMult * healthMult;
-      const scienceIncome = science * controlMult * literacyMult * happinessMult * crimeMult * healthMult;
-      const cultureIncome = culture * controlMult * happinessMult * crimeMult * healthMult;
-      const faithIncome = faith * controlMult * happinessMult * crimeMult * healthMult;
-      const productionIncome = production * controlMult * happinessMult * crimeMult * healthMult;
-      const powerIncome = power * controlMult * happinessMult * crimeMult * healthMult;
-      const populationRaw = vars.population || 0;
-
-      totals[owner].wealth += wealthIncome;
-      totals[owner].science += scienceIncome;
-      totals[owner].culture += cultureIncome;
-      totals[owner].faith += faithIncome;
-      totals[owner].power += powerIncome;
-      totals[owner].production += productionIncome;
-      totals[owner].population += populationRaw;
-    });
-  }
-
-  totals.blue.absolutism = playerAbsolutism.blue;
-  totals.red.absolutism = playerAbsolutism.red;
-
-  // Add excess food to global storage
-  globalFoodStorage.blue += totals.blue.food;
-  globalFoodStorage.red += totals.red.food;
-
-  // Max food based on population * 3
-  const blueMaxFood = Math.floor(totals.blue.population * 30);
-  const redMaxFood = Math.floor(totals.red.population * 30);
-
-  // Clamp global food stock
-  globalFoodStorage.blue = Math.min(Math.max(globalFoodStorage.blue, 0), blueMaxFood);
-  globalFoodStorage.red = Math.min(Math.max(globalFoodStorage.red, 0), redMaxFood);
-
-  function formatVal(curr, inc) {
-    return `${Math.floor(curr)} (+${Math.floor(inc)})`;
-  }
-  function formatFood(curr, max, production) {
-    return `${Math.floor(curr)} / ${max} (+${Math.floor(production)})`;
-  }
-
-  // Update UI with total population and other stats
-  document.getElementById('bluePopulationValue').textContent = `${Math.floor(totals.blue.population)}`;
-  document.getElementById('redPopulationValue').textContent = `${Math.floor(totals.red.population)}`;
-
-  document.getElementById('blueGoldValue').textContent = formatVal(totals.blue.wealth, totals.blue.wealth);
-  document.getElementById('blueScienceValue').textContent = formatVal(totals.blue.science, totals.blue.science);
-  document.getElementById('blueCultureValue').textContent = formatVal(totals.blue.culture, totals.blue.culture);
-  document.getElementById('blueFaithValue').textContent = formatVal(totals.blue.faith, totals.blue.faith);
-  document.getElementById('blueProductionValue').textContent = formatVal(totals.blue.production, totals.blue.production);
-  document.getElementById('bluePowerValue').textContent = formatVal(totals.blue.power, totals.blue.power);
-  document.getElementById('blueFoodValue').textContent = formatFood(globalFoodStorage.blue, blueMaxFood, totals.blue.foodProduction);
-  document.getElementById('blueAbsolutismValue').textContent = `${Math.floor(totals.blue.absolutism)}%`;
-
-  document.getElementById('redGoldValue').textContent = formatVal(totals.red.wealth, totals.red.wealth);
-  document.getElementById('redScienceValue').textContent = formatVal(totals.red.science, totals.red.science);
-  document.getElementById('redCultureValue').textContent = formatVal(totals.red.culture, totals.red.culture);
-  document.getElementById('redFaithValue').textContent = formatVal(totals.red.faith, totals.red.faith);
-  document.getElementById('redProductionValue').textContent = formatVal(totals.red.production, totals.red.production);
-  document.getElementById('redPowerValue').textContent = formatVal(totals.red.power, totals.red.power);
-  document.getElementById('redFoodValue').textContent = formatFood(globalFoodStorage.red, redMaxFood, totals.red.foodProduction);
-  document.getElementById('redAbsolutismValue').textContent = `${Math.floor(totals.red.absolutism)}%`;
-}
-
   // Helpers
   function capitalize(str) {
     if (!str) return "";
@@ -314,9 +55,25 @@ function manaGeneration() {
     if (selectedHex && selectedRing) {
       const variables = selectedRing === 'inner' ? selectedHex.innerVariables : selectedHex.outerVariables;
       const popVal = variables.population || 0;
-      const growthRate = variables.growth || 1.0; // fallback to 1.0
-      const growthPercent = ((growthRate - 1) * 100).toFixed(1);
-      populationContainer.querySelector('h3').textContent = `Population: ${popVal} (${growthPercent}%)`;
+
+      const starved = variables.starvedLastTurn || 0;
+      const grown = variables.grownLastTurn !== undefined ? variables.grownLastTurn : 0;
+      
+      const starvedText = starved > 0 ? ` <span style="color:#d9534f; font-weight:bold;">-${starved}</span>` : '';
+      
+      // Show grown always, with + if positive, color green if > 0, red if < 0, gray if 0
+      let grownSign = '+';
+      let grownColor = '#5cb85c'; // green
+      if (grown < 0) {
+        grownSign = '';
+        grownColor = '#d9534f';  // red
+      } else if (grown === 0) {
+        grownColor = '#6c757d';  // gray
+      }
+      
+      const grownText = ` <span style="color:${grownColor}; font-weight:bold;">${grownSign}${grown}</span>`;
+      
+      populationContainer.querySelector('h3').innerHTML = `Population: ${popVal}${grownText}${starvedText}`;
     }
     document.getElementById("buildingsContainer").style.display = "block";
     document.getElementById("tokenStatsContainer").style.display = "none";
@@ -339,22 +96,51 @@ function manaGeneration() {
 
     const variables = selectedRing === 'inner' ? selectedHex.innerVariables : selectedHex.outerVariables;
     const controlPct = variables.control || 0;
-    const devastationPct = 100 - controlPct;
+    const controlDisplay = controlPct.toFixed(1) + '%';
+    const devastationPct = variables.devastation|| 0;
     const foodStorage = variables.foodStockpile || 0;
     const maxFoodStorage = (variables.population || 0) * 5;
     terrainDesc += `<div><b>Food Storage:</b> ${Math.floor(foodStorage)}/${maxFoodStorage}</div>`;
+    terrainDesc += `
+      <div style="margin-top: 12px; width: 100%; max-width: 320px; display: flex; align-items: center; justify-content: space-between; user-select: none;">
+        <label for="localTaxSlider" style="color: gold; font-weight: 700; min-width: 110px; user-select: text;">Local Tax Rate</label>
+        <input 
+          type="range" 
+          id="localTaxSlider" 
+          min="1" max="100" value="50"
+          style="flex-grow: 1; margin: 0 10px; accent-color: gold; cursor: pointer;"
+        >
+        <span id="localTaxValue" style="color: gold; font-weight: 700; min-width: 30px; text-align: right; user-select: none;">50%</span>
+      </div>
+    `;
 
     terrainDetails.innerHTML = terrainDesc;
+        
+    const localTaxSlider = document.getElementById('localTaxSlider');
+    const localTaxValue = document.getElementById('localTaxValue');
+    if (localTaxSlider && localTaxValue) {
+      const vars = selectedRing === 'inner' ? selectedHex.innerVariables : selectedHex.outerVariables;
+      let localTaxVal = vars.localTax || 50;
+      localTaxSlider.value = localTaxVal;
+      localTaxValue.textContent = `${localTaxVal}%`;
+    
+      localTaxSlider.oninput = () => {
+        const val = parseInt(localTaxSlider.value, 10);
+        localTaxValue.textContent = `${val}%`;
+        vars.localTax = val;
+        // Optionally trigger recalculations here
+      };
+    }
 
     // Terrain stats grid (1 row, 4 columns)
-    const localTax = variables.wealth ? Math.floor(variables.wealth / 10) : 0; 
+    const pollution = variables.pollution|| 0; 
     // crime% approximate from control
-    const crimePct = variables.control !== undefined ? Math.floor((100 - variables.control) / 2) : 0;
+    const crimePct = variables.crime|| 0 ;
 
     terrainStats.innerHTML = `
-      <div><b>Control</b><br>${controlPct}%</div>
+      <div><b>Control</b><br>${controlDisplay}</div>
       <div><b>Devastation</b><br>${devastationPct}%</div>
-      <div><b>Local Tax</b><br>${localTax}%</div>
+      <div><b>Pollution</b><br>${pollution}%</div>
       <div><b>Crime</b><br>${crimePct}%</div>
     `;
 
@@ -964,9 +750,7 @@ function endTurn() {
   progressProductionLines();
   updateAllCaptures();
   draw();
-  manaGeneration();
-  populationGrowth();
-
+  ringManaPop();
 }
 
 // Blue button hold handlers
